@@ -20,59 +20,62 @@
 #define TAILLE_MAX_CHEMIN 50
 #define TAILLE_MAX_REP_PROCESS_TRAITEMENT 25
 #define TAILLE_MAX_FICHIER 1024
+#define TAILLE_LIGNE 100
 
 pthread_t thread1, thread2, thread3;
-
-//pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t m = PTHREAD_MUTEX_INITIALIZER;
 
 // Descripteurs de fichier (fd1 pour fichier 1 et fd2 pour fichier 2)
 int fd1, fd2;
 
+// Tampons contenant les lignes de nos fichiers
+int pipe_fichier1[2], pipe_fichier2[2];
+
+/*
 void *producteur_routine(void *i) {
 	pthread_t tid = pthread_self();
 	char bufFichiers[TAILLE_MAX_FICHIER];
 	int k = 0;
 	char c;
-
-	/*
-	while(c != '\n' && c != '\0') {
+	printf("debut routine producteur\n");
+	do {
+		printf("**************\n");
 		c = 0;
 		if(pthread_equal(thread2, tid)) {
 			printf("&&&&&& producteur 1\n");
-			// On est dans le premier thread consommateur, s'occupe du fichier 1
+			// On est dans le premier thread consommateur (s'occupe du fichier 1)
 			if(read(fd1, &c, 1) == -1) {
 				perror("Read dans le fichier 1 KO");
 				exit(EXIT_FAILURE);
 			}
 		} else if(pthread_equal(thread3, tid)) {
 			printf("&&&&&& producteur 2\n");
-			// On est dans le deuxieme thread consommateur, s'occupe du fichier 2
+			// On est dans le deuxieme thread consommateur (s'occupe du fichier 2)
 			if(read(fd2, &c, 1) == -1) {
 				perror("Read dans le fichier 1 KO");
 				exit(EXIT_FAILURE);
 			}
 		}
 		bufFichiers[k++] = c;
-	}
+	} while(c != '\n' && c != '\0');
 
 	// Affichage du contenu des fichiers
 	int numFichier;
 	if(pthread_equal(thread2, tid)) numFichier = 1;
 	else numFichier = 2;
-	printf("\nLe contenu du fichier %d est : %s\n", numFichier, bufFichiers);
+	printf("Le contenu du fichier %d est : %s\n", numFichier, bufFichiers);
 	
 	// Chaque thread producteur retourne son tampon remplie
 	pthread_exit(bufFichiers);
-	*/
 }
+*/
 
-
-/**
-	TODO : voir fd !!!
-**/
+/*
 void *consommateur_routine(void *i) {
 	void * rep_thread2, * rep_thread3;
 	int res = 0;
+
+	printf("debut routine conso\n");
 
 	// On attend la fin d'execution de nos 2 threads producteurs
 	if(pthread_join(thread2, rep_thread2) != 0) {
@@ -84,19 +87,19 @@ void *consommateur_routine(void *i) {
 		exit(EXIT_FAILURE);
 	}
 
-	printf("**** rep_thread2 : %s\n", rep_thread2);
-	printf("**** rep_thread3 : %s\n", rep_thread3);
+	printf("**** rep_thread2 : %p\n", rep_thread2);
+	printf("**** rep_thread3 : %p\n", rep_thread3);
 
 	// Comparer le contenu des 2 fichiers
 	int lu1, lu2;
 	char c1, c2;
 	do {
 		printf(" $$$$$$$$$$$$$ \n");
-		if((lu1 = read(rep_thread2, c1, 1)) == -1) {
+		if((lu1 = read(rep_thread2, &c1, 1)) == -1) {
 			perror("Read rep_thread2");
 			exit(EXIT_FAILURE);
 		}
-		if((lu2 = read(rep_thread3, c2, 1)) == -1) {
+		if((lu2 = read(rep_thread3, &c2, 1)) == -1) {
 			perror("Read rep_thread3");
 			exit(EXIT_FAILURE);
 		}
@@ -114,8 +117,142 @@ void *consommateur_routine(void *i) {
 	printf("res dans routine consommateur : %d\n", res);
 
 	// Si res = 1, fichiers différents. Si res = 0, fichiers égaux.
-	pthread_exit(res);
+	pthread_exit(&res);
 }
+*/
+
+
+void *producteur_routine(void *i) {
+	pthread_t tid = pthread_self();
+	char c;
+	
+	do {
+		if(pthread_equal(thread2, tid)) {
+			// On est dans le premier thread consommateur (s'occupe du fichier 1)
+			printf("(INFO) *** Producteur 1 ***\n");
+
+			close(pipe_fichier2[1]);
+			close(pipe_fichier2[0]);
+
+			//pthread_mutex_lock(&m);
+
+			if(read(fd1, &c, 1) == -1) {
+				perror("Read dans le fichier 1 KO");
+				exit(EXIT_FAILURE);
+			}
+
+			// On ecrit le caractere lu dans le tube 1
+			if(write(pipe_fichier1[1], &c, sizeof(char)) == -1) {
+				perror("(ERROR-146) Write producteur 1");
+				exit(EXIT_FAILURE);
+			}
+
+			if(c == '\n') {
+				printf("fin de ligne fichier 1\n");
+				// On arrete le remplissage du buffer (on attend que la ligne soit lu par le consommateur avant de continuer)
+				// => on attend tant que les tubes ne sont pas vides
+				int t1_vide;
+				char buf_tmp1[TAILLE_LIGNE];
+				while(1) {
+					if((t1_vide = read(pipe_fichier1[0], buf_tmp1, TAILLE_LIGNE)) == -1) {
+						perror("read test pipe 1 vide");
+						exit(EXIT_FAILURE);
+					}
+					if(t1_vide == 0) {
+						printf("tube 1 vide ok on continue\n");
+						break;
+					}
+				}
+			}
+			//pthread_mutex_unlock(&m);
+
+		} else if(pthread_equal(thread3, tid)) {
+			// On est dans le deuxieme thread consommateur (s'occupe du fichier 2)
+			printf("(INFO) *** Producteur 2 ***\n");
+
+			close(pipe_fichier1[1]);
+			close(pipe_fichier1[0]);
+
+			//pthread_mutex_lock(&m);
+
+			if(read(fd2, &c, 1) == -1) {
+				perror("Read dans le fichier 1 KO");
+				exit(EXIT_FAILURE);
+			}
+			
+			// On ecrit le caractere lu dans le tube 2
+			if(write(pipe_fichier2[1], &c, sizeof(char)) == -1) {
+				perror("(ERROR-185) Write producteur 2");
+				exit(EXIT_FAILURE);
+			}
+
+			if(c == '\n') {
+				printf("fin de ligne fichier 1\n");
+				// On arrete le remplissage du buffer (on attend que la ligne soit lu par le consommateur avant de continuer)
+				// => on attend tant que les tubes ne sont pas vides
+				int t2_vide;
+				char buf_tmp2[TAILLE_LIGNE];
+				while(1) {
+					if((t2_vide = read(pipe_fichier2[0], buf_tmp2, TAILLE_LIGNE)) == -1) {
+						perror("read test pipe 2 vide");
+						exit(EXIT_FAILURE);
+					}
+					if(t2_vide == 0) {
+						printf("tube 2 vide ok on continue\n");
+						break;
+					}
+				}
+			}
+			//pthread_mutex_unlock(&m);
+		}	
+	} while(c != '\0');
+	
+	// Chaque thread producteur retourne son tampon remplie
+	//pthread_exit(null);
+}
+
+
+
+void *consommateur_routine(void *i) {
+	int res = 0;
+	void* ret = NULL;
+	close(pipe_fichier1[1]);
+	close(pipe_fichier2[1]);
+
+	printf("(INFO-137) *** Consommateur ***\n");
+
+	// Comparer le contenu des 2 fichiers
+	char ligne_fichier1[TAILLE_LIGNE], ligne_fichier2[TAILLE_LIGNE];
+	
+	// Tant que les lignes des 2 fichiers ne contiennent pas le char de fin de fichier, on lit et on compare !
+	while(ligne_fichier1[(strlen(ligne_fichier1)-1)] != '\0' && ligne_fichier2[(strlen(ligne_fichier2)-1)] != '\0') {
+		printf(" $$$$$$$$$$$$$ \n");
+		if(read(pipe_fichier1[0], ligne_fichier1, TAILLE_LIGNE) == -1) {
+			perror("Read ligne fichier 1");
+			exit(EXIT_FAILURE);
+		}
+		if(read(pipe_fichier2[0], ligne_fichier2, TAILLE_LIGNE) == -1) {
+			perror("Read ligne fichier 2");
+			exit(EXIT_FAILURE);
+		}
+
+		if(strcmp(ligne_fichier1, ligne_fichier2) == 0) {
+			// Lignes équivalentes, on continue
+			res = 0;
+		} else {
+			// Lignes différentes, on close tous les threads(TODO !!!)
+			res = 1; //Pour le moment à la fin si res = 1 => fichiers diff
+		}
+		
+		printf("\nligne_fichier1 : %s\n", ligne_fichier1);
+		printf("ligne_fichier2 : %s\n", ligne_fichier2);
+		//printf("res dans routine consommateur : %d\n", res);
+	}
+
+	// Si res = 1, fichiers différents. Si res = 0, fichiers égaux.
+	pthread_exit(&res);
+}
+
 
 
 int main(int argc, char** argv) {
@@ -126,6 +263,10 @@ int main(int argc, char** argv) {
 	int t1[2], t2[2];
 	pipe(t1);
 	pipe(t2);
+
+	// tampons contenant les lignes de nos fichiers
+	pipe(pipe_fichier1);
+	pipe(pipe_fichier2);
 
 	// Sert de tampon pour les transmissions entre processus
 	char buf[TAILLE_MAX_CHEMIN];
@@ -151,7 +292,8 @@ int main(int argc, char** argv) {
 			exit(EXIT_FAILURE);
 		}
 		
-		printf("\n############# 1 ################\n");
+		//printf("\n############# 1 ################\n");
+		
 		// On recupere le deuxieme chemin dans le tube t1
 		if(read(t1[0], buf, TAILLE_MAX_CHEMIN) == -1) {
 			perror("Recuperation chemin 2 KO");
@@ -163,7 +305,7 @@ int main(int argc, char** argv) {
 			exit(EXIT_FAILURE);
 		}
 
-		printf("\n############# 2 ################\n");
+		//printf("\n############# 2 ################\n");
 		// On crée les threads pour faire les traitements (dans les routines)
 		if(pthread_create(&thread1, NULL, consommateur_routine, 0) != 0) {
 			printf("Creation thread 1 KO\n");
@@ -176,7 +318,7 @@ int main(int argc, char** argv) {
 			exit(EXIT_FAILURE);
 		}
 
-		printf("\n############# 3 ################\n");
+		//printf("\n############# 3 ################\n");
 
 		printf("\n");
 		void * res;
@@ -184,11 +326,12 @@ int main(int argc, char** argv) {
 		// On recupere le resultat de la comparaison des fichiers :
 		// Si egaux, on a 1, sinon on a 0
 		if(pthread_join(thread1, res) != 0) {
-			//erreur (appel systeme ???)
+			perror("pthread_join thread 1");
+			exit(EXIT_FAILURE);
 		}
 
 		printf("\n");
-		printf("\n ************** res 2 = %d\n\n", res);
+		//printf("\n ************** res 2 = %d\n\n", res);
 		printf("\n");
 
 		// On transmet le resultat au processus d'E/S
@@ -231,7 +374,7 @@ int main(int argc, char** argv) {
 				exit(EXIT_FAILURE);
 			}
 
-			printf("\n ************** buf = %s\n\n", buf);
+			//printf("\n ************** buf = %s\n\n", buf);
 
 			// Lecture de la reponse du processus de traitement via le tube t2
 			if(read(t2[0], buf, 1) == -1) {
@@ -239,13 +382,13 @@ int main(int argc, char** argv) {
 				exit(EXIT_FAILURE);
 			}
 		
-			printf("\n ************** buf final = %s\n\n", buf);
+			//printf("\n ************** buf final = %s\n\n", buf);
 
 			// Transmission resultat a l'utilisateur (sur la sortie standard)
 			if(buf == 0) printf("Les 2 fichiers sont égaux!\n");
-			else if(buf == 1) printf("Les fichiers sont différents!\n");
+			else if(*buf == 1) printf("Les fichiers sont différents!\n");
 			else {
-				printf("Erreur : le buffer ne contient ni 0 ni 1\n");
+				printf("(ERROR-401) Resultat KO : Le buffer ne contient ni 0 ni 1\n");
 				exit(EXIT_FAILURE);
 			}
 

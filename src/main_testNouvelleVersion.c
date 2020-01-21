@@ -85,6 +85,9 @@ void *consommateur_routine(void *i) {
 	while(1) {
 		// On attend que les producteurs ecrivent leur ligne (reprend quand on recoit SIGUSR1)	
 		sigwait($sigs_to_catch, NULL);
+		sigwait($sigs_to_catch, NULL);
+
+
 
 		// Les 2 fichiers possedent encore des lignes, on les compare
 		if(strcmp(tampon_fichier1, tampon_fichier2)) {

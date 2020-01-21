@@ -1,8 +1,8 @@
 CC = gcc
-CFLAGS = -Wall -ansi -pthread
+CFLAGS = -Wall -pthread
 EXEC = main
 
-all: $(EXEC)
+all: $(EXEC) clean
 
 main: main.o
 	$(CC) -o main main.o $(CFLAGS)

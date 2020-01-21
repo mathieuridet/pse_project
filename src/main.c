@@ -43,7 +43,6 @@ static void cleanup_handler(void *arg){
 void *producteur_routine(void *i) {
 	pthread_t tid = pthread_self();
 
-
 		if(pthread_equal(thread2, tid)) {
 			// On est dans le premier thread consommateur (s'occupe du fichier 1)
 			printf("(INFO-47) *** Producteur 1 ***\n");

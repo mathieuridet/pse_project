@@ -35,7 +35,7 @@ int fd1, fd2;
 int t_res[2];
 
 // Tampons contenant les contenus des fichiers
-char tampon_fichier1[TAILLE_LIGNE], tampon_fichier2[TAILLE_LIGNE];
+char *tampon_fichier1[TAILLE_LIGNE], *tampon_fichier2[TAILLE_LIGNE];
 
 /*
 static void cleanup_handler(void *arg){
@@ -46,14 +46,19 @@ static void cleanup_handler(void *arg){
 */
 
 void *producteur_routine(void* f) {
+	printf("(INFO-49) *** Producteur ***\n");
+
 	pthread_t tid = pthread_self();
 	int returnBarrier;
 	char *tamponRoutine;
 	int fd;
-	int numThread = *((int *) f);
+	//int numThread = *((int *) f);
 	char car[2];
 	int i;
 
+	printf("PROD : APRES VAR\n");
+
+	/*
 	if (numThread == 1){
 		fd = fd1;
 		tamponRoutine = tampon_fichier1;
@@ -63,7 +68,16 @@ void *producteur_routine(void* f) {
 	}else{
 		perror("(ERROR-P101) Numéro de thread inconnue");
 		exit(EXIT_FAILURE);
+	}*/
+	if (pthread_equal(thread2, tid)){
+		fd = fd1;
+		tamponRoutine = tampon_fichier1;
+	}else if(pthread_equal(thread3, tid)){
+		fd = fd2;
+		tamponRoutine = tampon_fichier2;
 	}
+
+	printf("PROD : APRES CHOIX PROD 1 OU 2\n");
 
 	// Ensemble de signaux a considerer
 	sigset_t sigs_to_catch;
@@ -71,6 +85,8 @@ void *producteur_routine(void* f) {
 	sigaddset(&sigs_to_catch, SIGUSR2);
 
 	while(1) {
+		printf("PROD : DEBUT WHILE(1)\n");
+
 		i = 0;
 		memset(tamponRoutine, 0, TAILLE_LIGNE);
 		while(car[0] != '\n' && car[0] != '\0'){
@@ -78,17 +94,24 @@ void *producteur_routine(void* f) {
 				perror("(ERROR-P102) lecture d'une ligne KO");
 				exit(EXIT_FAILURE);
 			}
+			printf("PROD : DANS 2e WHILE\n");
+			
 			tamponRoutine[i] = car[0];
 			i++;
 		}
 
 		// Si un thread arrive ici, il attend le 2e producteur avant de pouvoir continuer
 		if(pthread_barrier_wait(&barrier) != 0){
+			printf("PROD : ENVOI SIGNAL POUR CONTINUER\n");
+					
 			pthread_kill(&thread1, SIGUSR1);
 		}
 		// Les producteurs ont fini de remplir les tampons avec une ligne chacun, on envoit un signal au consommateur
 		// On attend que le consommateur compare les lignes (reprennent quand reçoivent SIGUSR2);
+		printf("PROD : ATTENTE SIGNAL\n");
 		sigwait(&sigs_to_catch, NULL);
+		printf("PROD : SIGNAL RECU\n");
+
 	}
 
 }
@@ -105,18 +128,24 @@ void *consommateur_routine(void *i) {
 	sigemptyset(&sigs_to_catch);
 	sigaddset(&sigs_to_catch, SIGUSR1);
 
+	printf("CONSO : APRES VAR\n");
+
 	while(1) {
 		// On attend que les producteurs ecrivent leur ligne (reprend quand on recoit SIGUSR1)	
+		printf("CONSO : AVANT RECEPTION SIGNAL\n");
+		printf("CONSO : tampon_fichier1 = %s\n", *tampon_fichier1);
+		printf("CONSO : tampon_fichier2 = %s\n", *tampon_fichier2);
 		sigwait(&sigs_to_catch, NULL);
-
-
+		printf("CONSO : APRES RECEPTION SIGNAL\n");
+		printf("CONSO : tampon_fichier1 = %s\n", *tampon_fichier1);
+		printf("CONSO : tampon_fichier2 = %s\n", *tampon_fichier2);
 
 		// Les 2 fichiers possedent encore des lignes, on les compare
-		if(strcmp(tampon_fichier1, tampon_fichier2)) {
+		if(strcmp(*tampon_fichier1, *tampon_fichier2)) {
 			// On envoie un signal aux producteurs pour les sortir de leur pause et passer a la ligne suivante
 			pthread_kill(&thread2, SIGUSR2);
 			pthread_kill(&thread3, SIGUSR2);
-		} else if(strcmp(tampon_fichier1, "") && strcmp(tampon_fichier2, "")) {
+		} else if(strcmp(*tampon_fichier1, "") && strcmp(*tampon_fichier2, "")) {
 			// Si les 2 fichiers sont vides, on s'arrete 
 			// (les fichiers sont equivalents sinon on se serait deja arrete)
 			pthread_cancel(thread2);
@@ -125,6 +154,7 @@ void *consommateur_routine(void *i) {
 		} 
 		else {
 			// Lignes differentes
+			printf("CONSO : LIGNES DIFFERENTES\n");
 			result = 1;
 
 			// On stoppe les threads producteurs
@@ -137,6 +167,8 @@ void *consommateur_routine(void *i) {
 
 	// TODO : gestionnaire de nettoyage
 
+
+	printf("CONSO : FIN\n");
 
 	// On stoppe le consommateur
 	pthread_exit(result);
@@ -274,8 +306,9 @@ int main(int argc, char** argv) {
 		}
 
 		// On attend la fin du processus de traitement
-		waitpid(pid2, NULL, 0);
-
+		int status = 100;
+		waitpid(pid2, &status, 0);
+		
 		// On appelle le gestionnaire de nettoyage pour libérer les ressources utilisées.
 		//pthread_cleanup_pop(1);
 
